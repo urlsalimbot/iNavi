@@ -1,0 +1,79 @@
+# This .gitignore file is for a Unity project.
+#
+# Recommended: Visual Studio / VS Code / JetBrains Rider
+
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Mm]emoryCaptures/
+/[Uu]serSettings/
+Assets/XR/
+Assets/XRI/
+Assets/MobileARTemplateAssets
+Assets/TextMesh Pro/
+Assets/Samples/
+Assets/[Uu]nityXRContent
+
+# Asset meta files must be kept, even if they don't have a corresponding asset.
+# However, if you are using an internal version control system, you might
+# want to ignore meta files.
+# !/[Aa]ssets/**/*.meta
+
+# Uncomment this line if you wish to ignore the asset database.
+# /[Aa]ssets/AssetDatabase.db
+
+# VS/VSTS Code-specific
+.vscode/
+.vs/
+.idea/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.db
+*.VC.db
+
+# Unity3D generated meta files
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+*.mat
+*.tif
+
+# Unity3D generated file lock
+release.out
+sysinfo.txt
+
+# External results
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# Crashlytics
+crashlytics-build.properties
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+
+# Custom export folder
+/export/
