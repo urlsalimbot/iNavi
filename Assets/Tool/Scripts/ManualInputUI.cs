@@ -14,8 +14,8 @@ public class ManualInputUI : MonoBehaviour
     {
         if (!showUI)
         {
-             if (GUI.Button(new Rect(10, 10, 100, 30), "Show Tool")) showUI = true;
-             return;
+            if (GUI.Button(new Rect(10, 10, 100, 30), "Show Tool")) showUI = true;
+            return;
         }
 
         GUI.Box(new Rect(10, 10, 240, 600), "Manual Labeling Tool");
@@ -55,7 +55,7 @@ public class ManualInputUI : MonoBehaviour
 
         // Rooms
         GUI.Label(new Rect(20, 140, 200, 20), "Set Region:");
-        
+
         int y = 160;
         int currentF = floorManager ? floorManager.currentFloor : 1;
 
@@ -71,7 +71,7 @@ public class ManualInputUI : MonoBehaviour
         y += 10;
         if (GUI.Button(new Rect(20, y, 95, 30), "Stair A"))
             DataCaptureManager.CurrentRegion = $"Stair_F{currentF}_A";
-            
+
         if (GUI.Button(new Rect(125, y, 95, 30), "Stair B"))
             DataCaptureManager.CurrentRegion = $"Stair_F{currentF}_B";
 
@@ -80,5 +80,15 @@ public class ManualInputUI : MonoBehaviour
             DataCaptureManager.CurrentRegion = $"Hallway_F{currentF}";
 
         GUI.Label(new Rect(20, y + 40, 220, 30), $"Current: {DataCaptureManager.CurrentRegion}");
+
+        y += 80;
+        if (GUI.Button(new Rect(20, y, 200, 30), "Anchor at Camera"))
+        {
+            
+            DataCaptureManager.CurrentRegion = $"Hallway_F{currentF}";
+            var dcm = FindObjectOfType<DataCaptureManager>();
+            if (dcm != null) dcm.AnchorNow();
+            else Debug.LogWarning("DataCaptureManager not found to call AnchorNow.");
+        }
     }
 }

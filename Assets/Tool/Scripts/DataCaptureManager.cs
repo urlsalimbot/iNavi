@@ -3,6 +3,7 @@ using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 using System.IO;
 using System.Text;
+using Unity.Collections;
 
 public class DataCaptureManager : MonoBehaviour
 {
@@ -39,15 +40,19 @@ public class DataCaptureManager : MonoBehaviour
             return;
 
         if (!cameraManager.TryAcquireLatestCpuImage(out XRCpuImage image))
+        {
+            Debug.LogWarning("[DataCapture] Failed to acquire CPU image");
             return;
+        }
+
 
         Transform cam = Camera.main.transform;
 
-        if (!qualityGate.IsFrameValid(cam))
-        {
-            image.Dispose();
-            return;
-        }
+        // if (!qualityGate.IsFrameValid(cam))
+        // {
+        //     image.Dispose();
+        //     return;
+        // }
 
         SaveFrame(image, cam);
         image.Dispose();
@@ -57,11 +62,18 @@ public class DataCaptureManager : MonoBehaviour
 
     void SaveFrame(XRCpuImage image, Transform cam)
     {
-        Texture2D tex = ConvertImage(image);
-        string imgName = $"frame_{{frameIndex:D6}}.jpg";
+        Texture2D tex = ConvertAndDownscaleImage(image);
+        string imgName = $"frame_{frameIndex:D6}.jpg";
         string imgPath = Path.Combine(imageDir, imgName);
 
-        File.WriteAllBytes(imgPath, tex.EncodeToJPG(90));
+        byte[] jpg = tex.EncodeToJPG(90);
+        if (jpg == null || jpg.Length == 0)
+        {
+            Debug.LogError("JPG encode failed");
+            return;
+        }
+        File.WriteAllBytes(imgPath, jpg);
+        Destroy(tex);
 
         SaveLabel(imgName, cam);
         frameIndex++;
@@ -69,9 +81,20 @@ public class DataCaptureManager : MonoBehaviour
 
     void SaveLabel(string imgName, Transform cam)
     {
-        if (floorManager == null) return;
+        if (floorManager == null)
+        {
+            Debug.LogError("[Label] FloorManager is NULL");
+            return;
+        }
+
         Transform anchor = floorManager.GetCurrentAnchor();
-        if (anchor == null) return;
+        if (anchor == null)
+        {
+            Debug.LogError("[Label] Anchor is NULL");
+            return;
+        }
+
+        Debug.Log("[Label] Writing label for " + imgName);
 
         Vector3 rel = cam.position - anchor.position;
         Vector3 rot = cam.eulerAngles;
@@ -98,24 +121,64 @@ public class DataCaptureManager : MonoBehaviour
         );
 
         File.WriteAllText(labelPath, sb.ToString());
+        Debug.Log("[Label] Wrote: " + labelPath);
     }
 
-    Texture2D ConvertImage(XRCpuImage image)
+    Texture2D ConvertAndDownscaleImage(XRCpuImage image)
     {
-        Texture2D tex = new Texture2D(image.width, image.height, TextureFormat.RGB24, false);
+        const int TARGET_WIDTH = 640;
+        const int TARGET_HEIGHT = 480;
 
         var conversionParams = new XRCpuImage.ConversionParams
         {
             inputRect = new RectInt(0, 0, image.width, image.height),
-            outputDimensions = new Vector2Int(image.width, image.height),
+            outputDimensions = new Vector2Int(TARGET_WIDTH, TARGET_HEIGHT),
             outputFormat = TextureFormat.RGB24,
             transformation = XRCpuImage.Transformation.MirrorY
         };
 
-        var raw = tex.GetRawTextureData<byte>();
-        image.Convert(conversionParams, raw);
+        int bufferSize = image.GetConvertedDataSize(conversionParams);
+        var buffer = new NativeArray<byte>(bufferSize, Allocator.Temp);
+
+        image.Convert(conversionParams, new NativeSlice<byte>(buffer));
+
+        Texture2D tex = new Texture2D(
+            TARGET_WIDTH,
+            TARGET_HEIGHT,
+            TextureFormat.RGB24,
+            false
+        );
+
+        tex.LoadRawTextureData(buffer);
         tex.Apply();
 
+        buffer.Dispose();
+
         return tex;
+    }
+
+    void OnApplicationQuit()
+    {
+        Debug.Log("[DataCaptureManager] Application quitting, cleaning up anchors.");
+
+        if (floorManager != null)
+        {
+            for (int i = 0; i < floorManager.floorAnchors.Length; i++)
+            {
+                if (floorManager.floorAnchors[i] != null)
+                {
+                    Destroy(floorManager.floorAnchors[i].gameObject);
+                    floorManager.floorAnchors[i] = null;
+                }
+            }
+        }
+    }
+
+    public void AnchorNow()
+    {
+        if (floorManager != null)
+        {
+            floorManager.CreateAnchorAtCamera();
+        }
     }
 }
