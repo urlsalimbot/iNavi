@@ -3,6 +3,7 @@ using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 using System.IO;
 using System.Text;
+using System;
 using Unity.Collections;
 
 public class DataCaptureManager : MonoBehaviour
@@ -20,18 +21,28 @@ public class DataCaptureManager : MonoBehaviour
     public static bool IsManualOverride = false;
 
     private string imageDir;
-    private string labelDir;
 
+    private string labelDir;
+    private string sessionDir;
     void Start()
+
     {
         IsManualOverride = false; // Reset on start
-        imageDir = Path.Combine(Application.persistentDataPath, "images");
-        labelDir = Path.Combine(Application.persistentDataPath, "labels");
+        string date = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        makeSession(date);
+    }
+
+    void makeSession(string date)
+    {
+        sessionDir = Path.Combine(Application.persistentDataPath, $"Session_{date}");
+
+        imageDir = Path.Combine(sessionDir, "images");
+        labelDir = Path.Combine(sessionDir, "labels");
 
         Directory.CreateDirectory(imageDir);
         Directory.CreateDirectory(labelDir);
 
-        Debug.Log("[DataCaptureManager] Dataset path: " + Application.persistentDataPath);
+        Debug.Log("[DataCaptureManager] Dataset path: " + sessionDir);
     }
 
     void Update()
@@ -62,6 +73,14 @@ public class DataCaptureManager : MonoBehaviour
 
     void SaveFrame(XRCpuImage image, Transform cam)
     {
+
+        Transform anchor = floorManager.GetCurrentAnchor();
+        if (anchor == null)
+        {
+            Debug.LogError("[Label] Anchor is NULL");
+            return;
+        }
+        
         Texture2D tex = ConvertAndDownscaleImage(image);
         string imgName = $"frame_{frameIndex:D6}.jpg";
         string imgPath = Path.Combine(imageDir, imgName);
@@ -110,7 +129,6 @@ public class DataCaptureManager : MonoBehaviour
         sb.AppendFormat("\"roll\":{0:F1},", rot.z);
         sb.AppendFormat("\"floor\":{0},", floorManager.currentFloor);
         sb.AppendFormat("\"region\":\"{0}\",", CurrentRegion);
-        sb.AppendFormat("\"manual\":{0},", IsManualOverride ? "true" : "false");
         sb.AppendFormat("\"tracking_state\":\"{0}\",", ARSession.state.ToString());
         sb.AppendFormat("\"timestamp\":{0}", System.DateTimeOffset.UtcNow.ToUnixTimeSeconds());
         sb.Append("}");

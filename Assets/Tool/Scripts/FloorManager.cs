@@ -70,6 +70,9 @@ public class FloorManager : MonoBehaviour
             return;
         }
 
+        var attacher = FindObjectOfType<AttachMeshToAnchor>();
+        attacher.AttachtoCam(anchor,pose);
+
         floorAnchors[idx] = anchor.transform;
 
         Debug.Log($"[FloorManager] Anchor created for floor {currentFloor}");

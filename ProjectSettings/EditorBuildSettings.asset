@@ -9,9 +9,9 @@ EditorBuildSettings:
     path: Assets/Scenes/TrainingGatherer.unity
     guid: 45ec1851865f6207c8793e6b27b7464e
   m_configObjects:
-    Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 356360a0f490bf67e87ba7b783d0daae, type: 2}
-    UnityEditor.XR.ARCore.ARCoreSettings: {fileID: 11400000, guid: 6ee72d15cf39dd748a13eac57397b9af, type: 2}
-    UnityEditor.XR.ARKit.ARKitSettings: {fileID: 11400000, guid: 0465d33c6aee55f44b0237db8b0e0259, type: 2}
-    com.unity.xr.arfoundation.simulation_settings: {fileID: 11400000, guid: c199e683398494f32b4cde18e73ab731, type: 2}
-    com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 3fd4fc0127790db4bae83f7b77da8d45, type: 2}
+    Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 262b6b10b42b9654796f8788453dc399, type: 2}
+    UnityEditor.XR.ARCore.ARCoreSettings: {fileID: 11400000, guid: d519e9e699c168543a6c3819eca57249, type: 2}
+    UnityEditor.XR.ARKit.ARKitSettings: {fileID: 11400000, guid: d3375f76d94ce5b40977781a1143758c, type: 2}
+    com.unity.xr.arfoundation.simulation_settings: {fileID: 11400000, guid: 99aa0807e80cdd74b866e2b92d950d54, type: 2}
+    com.unity.xr.management.loader_settings: {fileID: 11400000, guid: c837da0fce75a9c4590e3860dd2a215d, type: 2}
     xr.sdk.mock-hmd.settings: {fileID: 11400000, guid: fb66006a9816876dfb02d24b3fa0632c, type: 2}
