@@ -25,10 +25,17 @@ public class BuildingGroupedSelectList : MonoBehaviour
     [Header("UI References")]
     [Tooltip("The destination select UI GameObject to toggle")]
     public GameObject destinationSelectUI;
-    
+
+    [Header("Filter Settings")]
+    [Tooltip("Optional: Building filter UI component")]
+    public BuildingFilterUI buildingFilterUI;
+
     [Header("Optional: Custom building assignments")]
     [Tooltip("Override automatic building detection for specific POIs")]
     public List<BuildingAssignment> customBuildingAssignments = new List<BuildingAssignment>();
+
+    // Current building filter (null = show all)
+    private string currentBuildingFilter = null;
     
     private SelectList selectList;
     private List<ListItemData> currentItemsTotal;
@@ -71,9 +78,9 @@ public class BuildingGroupedSelectList : MonoBehaviour
             Debug.LogError("BuildingGroupedSelectList: destinationSelectUI not assigned! Cannot toggle POI list.");
             return;
         }
-        
+
         Debug.Log($"BuildingGroupedSelectList: TogglePOIList called. Current active: {destinationSelectUI.activeSelf}");
-        
+
         destinationSelectUI.SetActive(!destinationSelectUI.activeSelf);
 
         if (!destinationSelectUI.activeSelf)
@@ -84,6 +91,13 @@ public class BuildingGroupedSelectList : MonoBehaviour
         }
 
         Debug.Log("BuildingGroupedSelectList: Showing destination select UI and rendering POIs");
+        
+        // Reset filter when opening
+        if (buildingFilterUI != null)
+        {
+            buildingFilterUI.OnDestinationUIOpened();
+        }
+        
         RenderPOIs();
     }
     
@@ -219,23 +233,29 @@ public class BuildingGroupedSelectList : MonoBehaviour
     private Dictionary<string, List<ListItemData>> GroupPOIsByBuilding(List<ListItemData> pois)
     {
         var grouped = new Dictionary<string, List<ListItemData>>();
-        
+
         foreach (ListItemData poi in pois)
         {
             string building = GetBuildingFromPOI(poi);
-            
+
+            // Apply building filter - skip POIs that don't match the filter
+            if (!string.IsNullOrEmpty(currentBuildingFilter) && building != currentBuildingFilter)
+            {
+                continue;
+            }
+
             if (!grouped.ContainsKey(building))
             {
                 grouped[building] = new List<ListItemData>();
             }
-            
+
             grouped[building].Add(poi);
         }
-        
-        // Sort buildings by priority (CS, NB, AVR, then others)
+
+        // Sort buildings by priority (NB, CS, AB, MB, then others)
         var sortedGrouped = new Dictionary<string, List<ListItemData>>();
-        string[] priorityOrder = { "CS", "NB", "AVR", "COMMON" };
-        
+        string[] priorityOrder = { "NB", "CS", "AB", "MB", "COMMON" };
+
         foreach (string building in priorityOrder)
         {
             if (grouped.ContainsKey(building))
@@ -244,13 +264,13 @@ public class BuildingGroupedSelectList : MonoBehaviour
                 grouped.Remove(building);
             }
         }
-        
+
         // Add remaining buildings
         foreach (var kvp in grouped.OrderBy(k => k.Key))
         {
             sortedGrouped[kvp.Key] = kvp.Value;
         }
-        
+
         return sortedGrouped;
     }
     
@@ -265,36 +285,69 @@ public class BuildingGroupedSelectList : MonoBehaviour
         {
             return customAssignment.building.ToUpper();
         }
-        
+
         string name = poi.listTitle.ToUpper();
-        
+
         // Check for building codes at the start of the name
         if (name.StartsWith("CS"))
             return "CS";
         if (name.StartsWith("NB"))
             return "NB";
+        if (name.StartsWith("AB"))
+            return "AB";
+        if (name.StartsWith("MB"))
+            return "MB";
         if (name.StartsWith("AVR"))
             return "AVR";
-        
+
         // Check for common areas
-        if (name.Contains("COMFORT ROOM") || 
-            name.Contains("TEACHER'S LOUNGE") || 
+        if (name.Contains("COMFORT ROOM") ||
+            name.Contains("TEACHER'S LOUNGE") ||
             name.Contains("OFFICE OF STUDENT AFFAIRS") ||
             name.Contains("TESTING ROOM"))
         {
             return "COMMON";
         }
-        
+
         // Default to the first word or "OTHER"
         string[] parts = name.Split(' ');
         if (parts.Length > 0 && parts[0].Length <= 5)
         {
             return parts[0];
         }
-        
+
         return "OTHER";
     }
-    
+
+    /// <summary>
+    /// Applies a building filter and re-renders the POI list.
+    /// </summary>
+    /// <param name="buildingCode">Building code to filter by, or null to show all</param>
+    public void ApplyBuildingFilter(string buildingCode)
+    {
+        currentBuildingFilter = buildingCode;
+        
+        if (string.IsNullOrEmpty(buildingCode))
+        {
+            Debug.Log("BuildingGroupedSelectList: Filter cleared - showing all buildings");
+        }
+        else
+        {
+            Debug.Log($"BuildingGroupedSelectList: Filter set to building '{buildingCode}'");
+        }
+        
+        // Re-render with the new filter
+        RenderPOIsGroupedByBuilding();
+    }
+
+    /// <summary>
+    /// Gets the current building filter.
+    /// </summary>
+    public string GetCurrentBuildingFilter()
+    {
+        return currentBuildingFilter;
+    }
+
     /// <summary>
     /// Call when search string changed.
     /// </summary>

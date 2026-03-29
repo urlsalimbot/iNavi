@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
@@ -9,14 +10,22 @@ public class BuildingGroupHeader : MonoBehaviour
     [Header("UI References")]
     public TextMeshProUGUI buildingNameText;
     public GameObject background;
-    
+    public Button filterButton;
+
     [Header("Settings")]
     public Color headerBackgroundColor = new Color(0.1f, 0.1f, 0.1f, 1f);
     public Color headerTextColor = Color.white;
     public float headerHeight = 40f;
-    
+
     private string buildingName;
-    
+    private BuildingGroupedSelectList parentGroupedList;
+
+    void Awake()
+    {
+        // Find the BuildingGroupedSelectList component in the scene
+        parentGroupedList = FindObjectOfType<BuildingGroupedSelectList>();
+    }
+
     /// <summary>
     /// Sets the building name for this header.
     /// </summary>
@@ -28,7 +37,7 @@ public class BuildingGroupHeader : MonoBehaviour
             buildingNameText.text = GetBuildingDisplayName(name);
             buildingNameText.color = headerTextColor;
         }
-        
+
         if (background != null)
         {
             var image = background.GetComponent<UnityEngine.UI.Image>();
@@ -36,6 +45,24 @@ public class BuildingGroupHeader : MonoBehaviour
             {
                 image.color = headerBackgroundColor;
             }
+        }
+
+        // Set up filter button
+        if (filterButton != null)
+        {
+            filterButton.onClick.RemoveAllListeners();
+            filterButton.onClick.AddListener(OnFilterButtonClicked);
+        }
+    }
+
+    /// <summary>
+    /// Called when the filter button is clicked.
+    /// </summary>
+    private void OnFilterButtonClicked()
+    {
+        if (parentGroupedList != null && !string.IsNullOrEmpty(buildingName))
+        {
+            parentGroupedList.ApplyBuildingFilter(buildingName);
         }
     }
     
