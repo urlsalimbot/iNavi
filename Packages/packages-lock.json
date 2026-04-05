@@ -7,12 +7,12 @@
       "dependencies": {
         "com.unity.cloud.draco": "5.4.2",
         "com.unity.cloud.gltfast": "6.15.1",
-        "com.unity.xr.arcore": "6.3.2",
-        "com.unity.xr.arfoundation": "6.3.2",
-        "com.unity.xr.arkit": "6.3.2",
-        "com.unity.ai.navigation": "2.0.9"
+        "com.unity.xr.arcore": "6.3.3",
+        "com.unity.xr.arfoundation": "6.3.3",
+        "com.unity.xr.arkit": "6.3.3",
+        "com.unity.ai.navigation": "2.0.11"
       },
-      "hash": "a03bf2f47563d23830ab5472b9055d29052e5faa"
+      "hash": "c343c70a6916f0e1458852ddca6ea718521455a7"
     },
     "com.unity.2d.sprite": {
       "version": "1.0.0",
@@ -21,7 +21,7 @@
       "dependencies": {}
     },
     "com.unity.ai.navigation": {
-      "version": "2.0.10",
+      "version": "2.0.11",
       "depth": 1,
       "source": "registry",
       "dependencies": {
@@ -259,20 +259,20 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.xr.arcore": {
-      "version": "6.3.2",
+      "version": "6.3.3",
       "depth": 1,
       "source": "registry",
       "dependencies": {
         "com.unity.xr.core-utils": "2.2.2",
         "com.unity.xr.management": "4.4.0",
-        "com.unity.xr.arfoundation": "6.3.2",
+        "com.unity.xr.arfoundation": "6.3.3",
         "com.unity.modules.androidjni": "1.0.0",
         "com.unity.modules.unitywebrequest": "1.0.0"
       },
       "url": "https://packages.unity.com"
     },
     "com.unity.xr.arfoundation": {
-      "version": "6.3.2",
+      "version": "6.3.3",
       "depth": 1,
       "source": "registry",
       "dependencies": {
@@ -290,13 +290,13 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.xr.arkit": {
-      "version": "6.3.2",
+      "version": "6.3.3",
       "depth": 1,
       "source": "registry",
       "dependencies": {
         "com.unity.xr.core-utils": "2.2.2",
         "com.unity.xr.management": "4.4.0",
-        "com.unity.xr.arfoundation": "6.3.2",
+        "com.unity.xr.arfoundation": "6.3.3",
         "com.unity.editorcoroutines": "1.0.0"
       },
       "url": "https://packages.unity.com"

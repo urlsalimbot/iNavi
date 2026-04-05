@@ -23,7 +23,7 @@ public class BuildingGroupHeader : MonoBehaviour
     void Awake()
     {
         // Find the BuildingGroupedSelectList component in the scene
-        parentGroupedList = FindObjectOfType<BuildingGroupedSelectList>();
+        parentGroupedList = Object.FindFirstObjectByType<BuildingGroupedSelectList>();
     }
 
     /// <summary>

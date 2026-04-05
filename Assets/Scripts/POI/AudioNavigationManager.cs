@@ -1,11 +1,12 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using MultiSet;
 
 /// <summary>
 /// Manages audio cues for turn-by-turn navigation.
-/// Monitors the navmesh path and plays audio prompts for turns.
-/// Attach this to a GameObject in your scene (e.g., on the NavigationController GameObject).
+/// Uses ShowPath.instance to get the actual navmesh path corners.
+/// Works with MultiSet SDK's ShowPath and NavigationController.
 /// </summary>
 [RequireComponent(typeof(AudioSource))]
 public class AudioNavigationManager : MonoBehaviour
@@ -34,232 +35,280 @@ public class AudioNavigationManager : MonoBehaviour
     [Range(0f, 1f)]
     public float volume = 1f;
 
-    [Tooltip("Minimum distance between audio cues (in meters)")]
-    public float minDistanceBetweenCues = 5f;
-
     [Tooltip("Distance ahead to check for turns (in meters)")]
-    public float lookAheadDistance = 10f;
+    public float lookAheadDistance = 20f;
 
     [Tooltip("Angle threshold to consider a turn (in degrees)")]
-    public float turnAngleThreshold = 45f;
+    public float turnAngleThreshold = 15f;
 
     [Tooltip("Angle threshold to consider a U-turn (in degrees)")]
-    public float uturnAngleThreshold = 135f;
+    public float uturnAngleThreshold = 120f;
 
     [Tooltip("Distance to destination for 'approaching' cue (in meters)")]
-    public float approachingDestinationDistance = 20f;
+    public float approachingDestinationDistance = 50f;
 
-    [Header("References")]
-    [Tooltip("Reference to NavigationController. If null, will try to find automatically.")]
-    public NavigationController navigationController;
+    [Tooltip("Hysteresis buffer - must exit this far beyond approaching distance before reset")]
+    public float approachingResetBuffer = 20f;
 
-    [Tooltip("Transform representing the user's position. If null, uses Main Camera.")]
-    public Transform playerTransform;
+    [Header("Path Settings")]
+    [Tooltip("Distance threshold to consider reached destination")]
+    public float destinationThreshold = 5f;
+
+    [Tooltip("Minimum distance that must be traveled between turn cues")]
+    public float minTravelDistanceBetweenCues = 1f;
+
+    [Tooltip("Enable debug logging")]
+    public bool enableDebugLogs = true;
+
+    [Tooltip("Show path corners in Scene view")]
+    public bool showPathGizmos = false;
+
+    [Header("Cue Settings")]
+    [Tooltip("Play 'continue straight' cue at intersections")]
+    public bool playContinueStraightCue = true;
+
+    [Tooltip("Angle range to consider 'continue straight' (degrees)")]
+    public float straightAngleThreshold = 5f;
+
+    [Header("Debug")]
+    [Tooltip("If true, will invert left/right detection (use if directions are swapped)")]
+    public bool invertLeftRight = false;
+
+    [Header("Path Update Settings")]
+    [Tooltip("How often to check for audio cues (seconds)")]
+    public float audioCueCheckInterval = 0.05f;
 
     // Private references
     private AudioSource audioSource;
-    private NavMeshPath currentPath;
     private List<Vector3> pathCorners = new List<Vector3>();
+    private Vector3 lastPlayerPosition = Vector3.zero;
+    private float totalDistanceTraveled = 0f;
 
     // State tracking
-    private float lastCueDistance = 0f;
-    private int lastSpokenCornerIndex = -1;
+    private float lastCueCheckTime = 0f;
+    private int lastAnnouncedCornerIndex = -1;
     private bool hasPlayedApproaching = false;
     private bool hasPlayedDestination = false;
+    private bool wasNavigating = false;
+
+    // Static singleton
+    private static AudioNavigationManager instance;
+    public static AudioNavigationManager Instance
+    {
+        get
+        {
+            if (instance == null)
+            {
+                instance = FindFirstObjectByType<AudioNavigationManager>();
+            }
+            return instance;
+        }
+    }
 
     void Awake()
     {
+        // Singleton check
+        if (instance == null)
+        {
+            instance = this;
+        }
+        else if (instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
         // Get or add AudioSource
-        audioSource = GetComponent<AudioSource>();
-        if (audioSource == null)
+        if (!TryGetComponent(out audioSource))
         {
             audioSource = gameObject.AddComponent<AudioSource>();
         }
 
-        // Configure AudioSource
-        audioSource.playOnAwake = false;
-        audioSource.spatialBlend = 0f; // 2D audio
-        audioSource.volume = volume;
-
-        // Find NavigationController if not assigned
-        if (navigationController == null)
+        if (audioSource != null)
         {
-            navigationController = FindObjectOfType<NavigationController>();
-            if (navigationController == null)
-            {
-                Debug.LogWarning("AudioNavigationManager: NavigationController not found in scene!");
-            }
+            audioSource.playOnAwake = false;
+            audioSource.spatialBlend = 0f;
+            audioSource.volume = volume;
         }
+    }
 
-        // Set player transform
-        if (playerTransform == null)
+    void Start()
+    {
+        LogMessage("AudioNavigationManager initialized");
+
+        // Verify ShowPath exists
+        if (ShowPath.instance == null)
         {
-            Camera mainCamera = Camera.main;
-            if (mainCamera != null)
-            {
-                playerTransform = mainCamera.transform;
-            }
+            LogWarning("ShowPath.instance not found! Audio cues will not work until path visualization is active.");
+        }
+        else
+        {
+            LogMessage("ShowPath.instance found ✓");
         }
     }
 
     void Update()
     {
-        if (navigationController == null) return;
-        if (!navigationController.IsCurrentlyNavigating()) return;
-        if (audioSource == null) return;
-        if (playerTransform == null) return;
+        if (this == null || audioSource == null) return;
 
-        // Get current path from NavigationController
-        UpdatePath();
+        // Check navigation state
+        bool isNavigating = IsCurrentlyNavigating();
 
-        if (currentPath == null || currentPath.status != NavMeshPathStatus.PathComplete)
+        // Handle navigation state changes
+        if (isNavigating != wasNavigating)
+        {
+            wasNavigating = isNavigating;
+
+            if (isNavigating)
+            {
+                LogMessage("Navigation started - resetting state");
+                ResetState();
+            }
+            else
+            {
+                LogMessage("Navigation stopped");
+                ClearState();
+            }
+        }
+
+        // Only process when navigating
+        if (!isNavigating) return;
+
+        // Check for audio cues at controlled intervals
+        lastCueCheckTime += Time.deltaTime;
+        if (lastCueCheckTime < audioCueCheckInterval) return;
+
+        lastCueCheckTime = 0f;
+
+        // Get path corners from ShowPath
+        if (!GetPathCornersFromShowPath())
+        {
+            return;
+        }
+
+        if (pathCorners.Count < 2)
         {
             return;
         }
 
         // Check for audio cues
-        CheckForAudioCues();
+        Vector3 playerPos = GetPlayerPosition();
+        if (playerPos == Vector3.zero) return;
+
+        // Update distance traveled
+        UpdateDistanceTraveled(playerPos);
+
+        CheckForAudioCues(playerPos);
     }
 
     /// <summary>
-    /// Updates the current navmesh path from the NavigationController.
+    /// Updates the total distance traveled since last cue.
     /// </summary>
-    private void UpdatePath()
+    private void UpdateDistanceTraveled(Vector3 playerPos)
     {
-        if (navigationController == null) return;
-
-        // Try to get the current path from NavigationController
-        // Note: This depends on how the SDK exposes the path
-        currentPath = GetCurrentNavMeshPath();
-
-        if (currentPath != null && currentPath.status == NavMeshPathStatus.PathComplete)
+        if (lastPlayerPosition == Vector3.zero)
         {
-            ExtractPathCorners(currentPath);
+            lastPlayerPosition = playerPos;
+            return;
         }
+
+        float distanceSinceLastCheck = Vector3.Distance(playerPos, lastPlayerPosition);
+        totalDistanceTraveled += distanceSinceLastCheck;
+        lastPlayerPosition = playerPos;
     }
 
     /// <summary>
-    /// Gets the current NavMeshPath from the NavigationController.
-    /// This method may need adjustment based on how the SDK exposes path data.
+    /// Checks if we're currently navigating.
     /// </summary>
-    private NavMeshPath GetCurrentNavMeshPath()
+    private bool IsCurrentlyNavigating()
     {
-        if (navigationController == null) return null;
-
-        // Try to get path via reflection or public properties
-        // The SDK may expose this differently
-        var augmentedSpaceProperty = navigationController.GetType().GetProperty("augmentedSpace");
-        if (augmentedSpaceProperty != null)
+        try
         {
-            var augmentedSpace = augmentedSpaceProperty.GetValue(navigationController);
-            if (augmentedSpace != null)
+            if (NavigationController.instance == null)
             {
-                // Try to get current path from augmented space
-                var currentPathProperty = augmentedSpace.GetType().GetProperty("CurrentPath");
-                if (currentPathProperty != null)
-                {
-                    return currentPathProperty.GetValue(augmentedSpace) as NavMeshPath;
-                }
-
-                var navMeshPathProperty = augmentedSpace.GetType().GetProperty("NavMeshPath");
-                if (navMeshPathProperty != null)
-                {
-                    return navMeshPathProperty.GetValue(augmentedSpace) as NavMeshPath;
-                }
+                return false;
             }
-        }
 
-        // Alternative: Calculate path from player to destination
-        return CalculatePathFromPlayer();
+            return NavigationController.instance.IsCurrentlyNavigating();
+        }
+        catch (System.Exception ex)
+        {
+            LogWarning($"Error checking navigation: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>
-    /// Calculates a path from the player's current position to the destination.
+    /// Gets path corners from ShowPath.instance.
     /// </summary>
-    private NavMeshPath CalculatePathFromPlayer()
+    private bool GetPathCornersFromShowPath()
     {
-        if (playerTransform == null) return null;
-
-        NavMeshPath path = new NavMeshPath();
-        Vector3 startPos = playerTransform.position;
-
-        // Try to get destination from NavigationController
-        Vector3 destination = GetNavigationDestination();
-
-        if (destination != Vector3.zero)
+        if (ShowPath.instance == null)
         {
-            NavMesh.CalculatePath(startPos, destination, NavMesh.AllAreas, path);
+            return false;
         }
 
-        return path;
+        // Try to access the 'path' field via reflection
+        var showPathInstance = ShowPath.instance;
+        var pathField = showPathInstance.GetType().GetField("path",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        if (pathField == null)
+        {
+            return false;
+        }
+
+        NavMeshPath path = pathField.GetValue(showPathInstance) as NavMeshPath;
+
+        if (path == null || path.status != NavMeshPathStatus.PathComplete)
+        {
+            return false;
+        }
+
+        if (path.corners == null || path.corners.Length < 2)
+        {
+            return false;
+        }
+
+        // Update corners list
+        pathCorners.Clear();
+        for (int i = 0; i < path.corners.Length; i++)
+        {
+            pathCorners.Add(path.corners[i]);
+        }
+
+        return true;
     }
 
     /// <summary>
-    /// Gets the current navigation destination.
+    /// Gets the player/camera position.
     /// </summary>
-    private Vector3 GetNavigationDestination()
+    private Vector3 GetPlayerPosition()
     {
-        if (navigationController == null) return Vector3.zero;
-
-        // Try to get destination via reflection
-        var destinationProperty = navigationController.GetType().GetProperty("Destination");
-        if (destinationProperty != null)
+        Camera mainCamera = Camera.main;
+        if (mainCamera != null)
         {
-            var dest = destinationProperty.GetValue(navigationController);
-            if (dest is Vector3)
-            {
-                return (Vector3)dest;
-            }
-        }
-
-        var targetProperty = navigationController.GetType().GetProperty("Target");
-        if (targetProperty != null)
-        {
-            var target = targetProperty.GetValue(navigationController);
-            if (target is Vector3)
-            {
-                return (Vector3)target;
-            }
+            return mainCamera.transform.position;
         }
 
         return Vector3.zero;
     }
 
     /// <summary>
-    /// Extracts corner points from the navmesh path.
+    /// Checks if an audio cue should be played.
     /// </summary>
-    private void ExtractPathCorners(NavMeshPath path)
-    {
-        pathCorners.Clear();
-
-        if (path == null) return;
-
-        int cornerCount = path.corners.Length;
-        for (int i = 0; i < cornerCount; i++)
-        {
-            pathCorners.Add(path.corners[i]);
-        }
-    }
-
-    /// <summary>
-    /// Checks if an audio cue should be played based on current position and path.
-    /// </summary>
-    private void CheckForAudioCues()
+    private void CheckForAudioCues(Vector3 playerPos)
     {
         if (pathCorners.Count < 2) return;
 
-        Vector3 playerPos = playerTransform.position;
-
-        // Find the closest point on the path
-        int currentCornerIndex = FindClosestCornerIndex(playerPos);
-
-        // Check if we've reached the destination
+        // Check if we've reached the destination (with larger threshold)
         if (IsAtDestination(playerPos))
         {
             if (!hasPlayedDestination)
             {
-                PlayCue(destinationReachedClip);
+                PlayCue(destinationReachedClip, "Destination Reached");
                 hasPlayedDestination = true;
+                LogMessage($"✓ Destination reached! Distance: {Vector3.Distance(playerPos, pathCorners[pathCorners.Count - 1]):F1}m");
             }
             return;
         }
@@ -268,39 +317,56 @@ public class AudioNavigationManager : MonoBehaviour
             hasPlayedDestination = false;
         }
 
-        // Check for approaching destination
-        float distanceToDestination = Vector3.Distance(playerPos, pathCorners[pathCorners.Count - 1]);
-        if (distanceToDestination <= approachingDestinationDistance && !hasPlayedApproaching)
+        // Check for approaching destination (with hysteresis to prevent spam)
+        float distanceToDestination = DistanceXZ(playerPos, pathCorners[pathCorners.Count - 1]);
+
+        if (!hasPlayedApproaching && distanceToDestination <= approachingDestinationDistance)
         {
-            PlayCue(approachingDestinationClip);
+            PlayCue(approachingDestinationClip, "Approaching Destination");
             hasPlayedApproaching = true;
+            LogMessage($"Approaching cue played. Distance: {distanceToDestination:F1}m");
         }
-        else if (distanceToDestination > approachingDestinationDistance)
+
+        // Hysteresis: only reset when WELL outside the approaching zone
+        float resetDistance = approachingDestinationDistance + approachingResetBuffer;
+        if (hasPlayedApproaching && distanceToDestination > resetDistance)
         {
             hasPlayedApproaching = false;
+            LogMessage($"Approaching reset. Distance: {distanceToDestination:F1}m (threshold: {resetDistance:F1}m)");
         }
 
-        // Find the next turn to announce
-        int nextTurnCornerIndex = FindNextTurnCornerIndex(currentCornerIndex, playerPos);
+        // Find our position on the path
+        int closestCornerIndex = FindClosestCornerIndex(playerPos);
+        float distanceToClosestCorner = DistanceXZ(playerPos, pathCorners[closestCornerIndex]);
 
-        if (nextTurnCornerIndex > currentCornerIndex && nextTurnCornerIndex < pathCorners.Count)
+        // Find the next corner ahead (including winding paths)
+        int nextCornerIndex = FindNextCornerToAnnounce(closestCornerIndex);
+
+        LogMessage($"Position: closest={closestCornerIndex}, next={nextCornerIndex}, total corners={pathCorners.Count}");
+
+        if (nextCornerIndex <= closestCornerIndex || nextCornerIndex >= pathCorners.Count)
         {
-            // Check if we should announce this turn
-            if (ShouldAnnounceTurn(nextTurnCornerIndex, playerPos))
+            return;
+        }
+
+        // Check if we should announce this corner
+        if (ShouldAnnounceTurn(nextCornerIndex, closestCornerIndex, distanceToClosestCorner))
+        {
+            TurnDirection turnDirection = GetTurnDirection(nextCornerIndex);
+            AudioClip cueClip = GetCueForTurn(turnDirection);
+            string turnName = GetTurnDirectionName(turnDirection);
+
+            if (cueClip != null)
             {
-                Vector3 turnPosition = pathCorners[nextTurnCornerIndex];
-                float distanceToTurn = Vector3.Distance(playerPos, turnPosition);
+                PlayCue(cueClip, turnName);
 
-                // Determine turn direction
-                TurnDirection turnDirection = GetTurnDirection(nextTurnCornerIndex);
-
-                AudioClip cueClip = GetCueForTurn(turnDirection);
-                if (cueClip != null)
-                {
-                    PlayCue(cueClip);
-                    lastSpokenCornerIndex = nextTurnCornerIndex;
-                    lastCueDistance = distanceToTurn;
-                }
+                // Update state
+                lastAnnouncedCornerIndex = nextCornerIndex;
+                totalDistanceTraveled = 0f;
+            }
+            else
+            {
+                LogWarning($"No audio clip assigned for {turnName}");
             }
         }
     }
@@ -327,13 +393,22 @@ public class AudioNavigationManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Finds the next corner that represents a turn.
+    /// Finds the next corner to announce (including straight, left, right, u-turn).
+    /// For winding paths (like staircases), announces the next corner ahead regardless of angle.
     /// </summary>
-    private int FindNextTurnCornerIndex(int currentCornerIndex, Vector3 playerPos)
+    private int FindNextCornerToAnnounce(int currentCornerIndex)
     {
+        // Look ahead from the next corner
         for (int i = currentCornerIndex + 1; i < pathCorners.Count - 1; i++)
         {
-            if (IsSignificantTurn(i))
+            // For winding paths, announce the next corner that's ahead
+            Vector3 cornerPos = pathCorners[i];
+            Vector3 playerPos = GetPlayerPosition();
+            float distanceToCorner = DistanceXZ(playerPos, cornerPos);
+
+            // Announce the first corner that's at least 0.5m ahead
+            // This catches even tight winding staircases
+            if (distanceToCorner > 0.5f)
             {
                 return i;
             }
@@ -343,40 +418,71 @@ public class AudioNavigationManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Checks if a corner represents a significant turn.
+    /// Checks if a corner is significant enough to announce.
+    /// Now includes straight paths for 'continue straight' cues.
     /// </summary>
-    private bool IsSignificantTurn(int cornerIndex)
+    private bool IsSignificantCorner(int cornerIndex)
     {
         if (cornerIndex <= 0 || cornerIndex >= pathCorners.Count - 1) return false;
 
-        Vector3 incoming = (pathCorners[cornerIndex] - pathCorners[cornerIndex - 1]).normalized;
-        Vector3 outgoing = (pathCorners[cornerIndex + 1] - pathCorners[cornerIndex]).normalized;
+        // Get incoming and outgoing directions (projected to XZ plane)
+        Vector3 incoming = ProjectToXZ(pathCorners[cornerIndex] - pathCorners[cornerIndex - 1]);
+        Vector3 outgoing = ProjectToXZ(pathCorners[cornerIndex + 1] - pathCorners[cornerIndex]);
+
+        if (incoming == Vector3.zero || outgoing == Vector3.zero) return false;
 
         float angle = Vector3.Angle(incoming, outgoing);
 
-        return angle >= turnAngleThreshold;
+        // Check if it's a significant turn OR u-turn OR straight path
+        if (angle >= turnAngleThreshold) return true;
+        if (angle >= uturnAngleThreshold) return true;
+        if (playContinueStraightCue && angle <= straightAngleThreshold) return true;
+
+        return false;
     }
 
     /// <summary>
-    /// Determines if we should announce a turn at the given corner.
+    /// Projects a vector to XZ plane (ignores Y for height-independent detection).
     /// </summary>
-    private bool ShouldAnnounceTurn(int cornerIndex, Vector3 playerPos)
+    private Vector3 ProjectToXZ(Vector3 vector)
+    {
+        return new Vector3(vector.x, 0, vector.z).normalized;
+    }
+
+    /// <summary>
+    /// Calculates distance ignoring height (XZ plane only).
+    /// </summary>
+    private float DistanceXZ(Vector3 a, Vector3 b)
+    {
+        Vector3 aXZ = new Vector3(a.x, 0, a.z);
+        Vector3 bXZ = new Vector3(b.x, 0, b.z);
+        return Vector3.Distance(aXZ, bXZ);
+    }
+
+    /// <summary>
+    /// Determines if we should announce a turn.
+    /// </summary>
+    private bool ShouldAnnounceTurn(int turnCornerIndex, int currentCornerIndex, float distanceToCurrentCorner)
     {
         // Don't announce the same corner twice
-        if (cornerIndex <= lastSpokenCornerIndex) return false;
+        if (turnCornerIndex <= lastAnnouncedCornerIndex) return false;
 
-        Vector3 turnPosition = pathCorners[cornerIndex];
-        float distanceToTurn = Vector3.Distance(playerPos, turnPosition);
+        // Calculate distance to the turn (ignoring height)
+        Vector3 turnPosition = pathCorners[turnCornerIndex];
+        Vector3 playerPos = GetPlayerPosition();
+        float distanceToTurn = DistanceXZ(playerPos, turnPosition);
 
-        // Don't spam cues - enforce minimum distance
-        if (distanceToTurn > lastCueDistance + minDistanceBetweenCues) return false;
+        // Check if we're within the announcement range
+        bool withinRange = distanceToTurn <= lookAheadDistance;
 
-        // Announce when approaching the turn (within look ahead distance)
-        return distanceToTurn <= lookAheadDistance;
+        // Also check if we've traveled enough distance since last announcement
+        bool traveledEnough = totalDistanceTraveled >= minTravelDistanceBetweenCues;
+
+        return withinRange && traveledEnough;
     }
 
     /// <summary>
-    /// Determines the direction of a turn at the given corner.
+    /// Determines the direction of a turn.
     /// </summary>
     private TurnDirection GetTurnDirection(int cornerIndex)
     {
@@ -385,27 +491,64 @@ public class AudioNavigationManager : MonoBehaviour
             return TurnDirection.None;
         }
 
-        Vector3 incoming = (pathCorners[cornerIndex] - pathCorners[cornerIndex - 1]).normalized;
-        Vector3 outgoing = (pathCorners[cornerIndex + 1] - pathCorners[cornerIndex]).normalized;
+        // Get incoming and outgoing directions (projected to XZ plane)
+        Vector3 incoming = ProjectToXZ(pathCorners[cornerIndex] - pathCorners[cornerIndex - 1]);
+        Vector3 outgoing = ProjectToXZ(pathCorners[cornerIndex + 1] - pathCorners[cornerIndex]);
+
+        if (incoming == Vector3.zero || outgoing == Vector3.zero)
+        {
+            return TurnDirection.None;
+        }
 
         float angle = Vector3.Angle(incoming, outgoing);
 
-        // Check for U-turn
+        // Check for U-turn first
         if (angle >= uturnAngleThreshold)
         {
             return TurnDirection.UTurn;
         }
 
+        // Check for straight path
+        if (playContinueStraightCue && angle <= straightAngleThreshold)
+        {
+            return TurnDirection.Straight;
+        }
+
         // Determine left or right using cross product
         Vector3 cross = Vector3.Cross(incoming, outgoing);
-        float crossY = cross.y; // Assuming Y-up coordinate system
+        float crossY = cross.y;
+
+        LogMessage($"Turn: angle={angle:F1}°, crossY={crossY:F3}, in=({incoming.x:F2},{incoming.z:F2}), out=({outgoing.x:F2},{outgoing.z:F2})");
 
         if (Mathf.Abs(crossY) < 0.01f)
         {
             return TurnDirection.Straight;
         }
 
-        return crossY > 0 ? TurnDirection.Left : TurnDirection.Right;
+        // Determine direction - can be inverted via inspector if needed
+        bool isRight = crossY > 0;
+
+        if (invertLeftRight)
+        {
+            isRight = !isRight;
+        }
+
+        return isRight ? TurnDirection.Right : TurnDirection.Left;
+    }
+
+    /// <summary>
+    /// Gets a readable name for a turn direction.
+    /// </summary>
+    private string GetTurnDirectionName(TurnDirection direction)
+    {
+        switch (direction)
+        {
+            case TurnDirection.Left: return "Turn Left";
+            case TurnDirection.Right: return "Turn Right";
+            case TurnDirection.UTurn: return "U-Turn";
+            case TurnDirection.Straight: return "Continue Straight";
+            default: return "Unknown";
+        }
     }
 
     /// <summary>
@@ -415,56 +558,77 @@ public class AudioNavigationManager : MonoBehaviour
     {
         switch (direction)
         {
-            case TurnDirection.Left:
-                return turnLeftClip;
-            case TurnDirection.Right:
-                return turnRightClip;
-            case TurnDirection.UTurn:
-                return uturnClip;
-            case TurnDirection.Straight:
-                return continueStraightClip;
-            default:
-                return null;
+            case TurnDirection.Left: return turnLeftClip;
+            case TurnDirection.Right: return turnRightClip;
+            case TurnDirection.UTurn: return uturnClip;
+            case TurnDirection.Straight: return continueStraightClip;
+            default: return null;
         }
     }
 
     /// <summary>
-    /// Checks if the player is at the destination.
+    /// Checks if the player is at the destination (ignoring height).
     /// </summary>
     private bool IsAtDestination(Vector3 playerPos)
     {
         if (pathCorners.Count == 0) return false;
 
         Vector3 destination = pathCorners[pathCorners.Count - 1];
-        float distanceToDestination = Vector3.Distance(playerPos, destination);
+        float distanceToDestination = DistanceXZ(playerPos, destination);
 
-        return distanceToDestination < 2f; // Within 2 meters of destination
+        return distanceToDestination < destinationThreshold;
     }
 
     /// <summary>
     /// Plays an audio cue.
     /// </summary>
-    private void PlayCue(AudioClip clip)
+    private void PlayCue(AudioClip clip, string cueName)
     {
+        if (this == null || audioSource == null) return;
+
         if (clip == null)
         {
-            Debug.LogWarning("AudioNavigationManager: Attempted to play null clip!");
+            LogWarning($"Null clip: {cueName}");
             return;
         }
 
-        audioSource.PlayOneShot(clip);
-        Debug.Log($"AudioNavigationManager: Playing cue '{clip.name}'");
+        // Check if already playing
+        if (audioSource.isPlaying)
+        {
+            LogMessage($"Queue skipped: '{cueName}' (audio busy)");
+            return;
+        }
+
+        try
+        {
+            audioSource.PlayOneShot(clip);
+            LogMessage($"▶ Playing: '{cueName}' [{clip.name}]");
+        }
+        catch (System.Exception ex)
+        {
+            LogWarning($"Error playing audio: {ex.Message}");
+        }
     }
 
     /// <summary>
-    /// Resets the audio navigation state. Call this when navigation starts.
+    /// Resets the audio navigation state.
     /// </summary>
     public void ResetState()
     {
-        lastCueDistance = 0f;
-        lastSpokenCornerIndex = -1;
+        lastCueCheckTime = 0f;
+        lastAnnouncedCornerIndex = -1;
         hasPlayedApproaching = false;
         hasPlayedDestination = false;
+        totalDistanceTraveled = 0f;
+        lastPlayerPosition = Vector3.zero;
+    }
+
+    /// <summary>
+    /// Clears state when navigation stops.
+    /// </summary>
+    private void ClearState()
+    {
+        ResetState();
         pathCorners.Clear();
     }
 
@@ -488,6 +652,52 @@ public class AudioNavigationManager : MonoBehaviour
         if (audioSource != null)
         {
             audioSource.mute = muted;
+        }
+    }
+
+    /// <summary>
+    /// Logs a message if debug is enabled.
+    /// </summary>
+    private void LogMessage(string message)
+    {
+        if (enableDebugLogs)
+        {
+            Debug.Log($"[AudioNav] {message}");
+        }
+    }
+
+    /// <summary>
+    /// Logs a warning.
+    /// </summary>
+    private void LogWarning(string message)
+    {
+        Debug.LogWarning($"[AudioNav] {message}");
+    }
+
+    void OnDrawGizmos()
+    {
+        if (!showPathGizmos) return;
+        if (pathCorners == null || pathCorners.Count < 2) return;
+
+        // Draw path corners
+        Gizmos.color = Color.yellow;
+        for (int i = 0; i < pathCorners.Count; i++)
+        {
+            Gizmos.DrawWireSphere(pathCorners[i], 0.5f);
+        }
+
+        // Draw path lines
+        Gizmos.color = Color.green;
+        for (int i = 0; i < pathCorners.Count - 1; i++)
+        {
+            Gizmos.DrawLine(pathCorners[i], pathCorners[i + 1]);
+        }
+
+        // Draw destination
+        if (pathCorners.Count > 0)
+        {
+            Gizmos.color = Color.red;
+            Gizmos.DrawWireSphere(pathCorners[pathCorners.Count - 1], 1f);
         }
     }
 
