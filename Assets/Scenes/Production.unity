@@ -9217,7 +9217,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   surfaceColor: {r: 0, g: 1, b: 0, a: 0.3}
   heightOffset: 0.01
-  IsNavMeshShown: 1
+  IsNavMeshShown: 0
 --- !u!1 &1224517173
 GameObject:
   m_ObjectHideFlags: 0
@@ -17371,7 +17371,7 @@ PrefabInstance:
       objectReference: {fileID: 6347457138793568321}
     - target: {fileID: 6223266429924367176, guid: 655cd46b63c52478f864df229ba7c4c6, type: 3}
       propertyPath: isCornersVisible
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8892056803825949381, guid: 655cd46b63c52478f864df229ba7c4c6, type: 3}
       propertyPath: poiList
