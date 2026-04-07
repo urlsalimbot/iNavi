@@ -120,26 +120,23 @@ public class FAQPanelController : MonoBehaviour
         string faqText = @"
 <color=#4DA6FF><size=76><b>FREQUENTLY ASKED QUESTIONS</b></size></color>
 
-<color=#FFD700><b>📍 How do I navigate to a destination?</b></color>
+<color=#FFD700><b>→ How do I navigate to a destination?</b></color>
 Tap the destination button, select a building, then choose your room. Navigation will start automatically.
 
-<color=#FFD700><b>🔊 How do I enable audio navigation?</b></color>
+<color=#FFD700><b>→ How do I enable audio navigation?</b></color>
 Audio navigation is automatic when navigating. Ensure your device volume is on.
 
-<color=#FFD700><b>🏢 What do the building codes mean?</b></color>
+<color=#FFD700><b>→ What do the building codes mean?</b></color>
 • NB = New Building
 • CS = Computer Science Building
 • AB = Admin Building
 • MB = Main Building
 
-<color=#FFD700><b>🧭 The navigation is inaccurate, what should I do?</b></color>
+<color=#FFD700><b>→ The navigation is inaccurate, what should I do?</b></color>
 Try recalibrating by walking to a known landmark. Ensure you have good GPS signal.
 
-<color=#FFD700><b>⚙️ How do I adjust settings?</b></color>
-Access settings from the main menu to adjust audio, visual, and navigation preferences.
-
-<color=#FFD700><b>🆘 Who do I contact for support?</b></color>
-Contact IT Support at support@example.com or visit the Admin Building.
+<color=#FFD700><b>→ Who do I contact for support?</b></color>
+Contact IT Support at juhniarl@gmail.com.
 ";
 
         if (faqContentText != null)
